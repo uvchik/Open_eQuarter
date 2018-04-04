@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
-import time
+import time,datetime
 
 from PyQt4.QtGui import QProgressBar
 from PyQt4.QtCore import Qt
@@ -16,9 +16,18 @@ OeQ_ExtensionDefaultRegistry = []
 
 OeQ_ExtensionsLoaded = False
 
+first_of_all_calculation_times =datetime.datetime(1900, 1, 1, 0, 0)
+
+OeQ_BuildingIndex = 0
+
+def OeQ_get_bld_id():
+    global OeQ_BuildingIndex
+    OeQ_BuildingIndex += 1
+    return OeQ_BuildingIndex
+
 # global OeQ_project_info
 OeQ_project_info = {
-    'project_name': u'My Project',
+    'project_name': u'New Project',
     'description': u'The aim of this project, is to analyse a quarter.',
     'location_city': u'City or street',
     'location_city_short': u'City',
@@ -31,6 +40,8 @@ OeQ_project_info = {
     'average_build_year': 1950,
     'population_density': 14000
 }
+
+
 
 # global OeQ_project_name
 def OeQ_project_name():
@@ -72,6 +83,27 @@ def OeQ_project_saved():
     #return OeQ_project_name() != ''
 
 
+
+def fix_german_umlauts(thetext):
+    #thetext = str(thetext)
+    codetype = type(thetext)
+    if codetype != unicode:
+        thetext = unicode(thetext, "utf-8")
+
+    print type(thetext)
+
+    trans = {u'ä':u'ae',u'Ä':u'Ae',u'ö':u'oe',u'Ö':u'Oe',u'ü':u'ue', u'Ü':u'Ue',u'ß':u'ss'}
+    for i in trans.keys():
+        k = thetext.split(i)
+        print k
+        l = trans[i]
+        print l
+        thetext = l.join(k)
+    if codetype != unicode:
+        return str(thetext)
+    else:
+        return thetext
+
 def OeQ_push_progressbar(title='Be patient!', message='Background calculations are going on...', timeout=0,
                          maxcount=100):
     widget = iface.messageBar().createMessage(title, message)
@@ -90,11 +122,13 @@ def OeQ_push_progressbar(title='Be patient!', message='Background calculations a
     return {'widget':progressbarwidget,'baritem':baritem}
 
 
-def OeQ_update_progressbar(progressbar, progress_counter):
+def OeQ_update_progressbar(progressbar, progress_counter,message = None):
     progress_counter = progress_counter + 1
+    OeQ_unlockQgis()
     progressbar['widget'].setValue(progress_counter)
     OeQ_unlockQgis()
     #print "THIS PRINTLN IS NECESSARY TO TRIGGER THE MESSAGEBAR"
+
     return progress_counter
 
 
@@ -108,9 +142,10 @@ def OeQ_pop_progressbar(progressbar=None):
 def OeQ_push_info(title='Be patient!', message='Background calculations are going on...'):
     widget = iface.messageBar().createMessage(title, message)
     iface.messageBar().pushWidget(widget, iface.messageBar().INFO)
+    OeQ_unlockQgis()
     return widget
-    #OeQ_unlockQgis()
     #print "THIS PRINTLN IS NECESSARY TO TRIGGER THE MESSAGEBAR"
+
 
 
 def OeQ_pop_info(baritem=None):
@@ -120,11 +155,34 @@ def OeQ_pop_info(baritem=None):
         iface.messageBar().popWidget(baritem)
 
 
+OeQ_StatusWidget = None
+
+def OeQ_push_status(title='Status: ', message='Complete'):
+    global OeQ_StatusWidget
+    OeQ_StatusWidget = iface.messageBar().createMessage(title, message)
+    iface.messageBar().pushWidget(OeQ_StatusWidget, iface.messageBar().INFO)
+    OeQ_unlockQgis()
+    return OeQ_StatusWidget
+    #print "THIS PRINTLN IS NECESSARY TO TRIGGER THE MESSAGEBAR"
+
+
+def OeQ_pop_status():
+    global OeQ_StatusWidget
+    if bool(OeQ_StatusWidget):
+        try:
+            iface.messageBar().popWidget(OeQ_StatusWidget)
+        except:
+            pass
+
+
+
+
+
 def OeQ_push_warning(title='Be patient!', message='Background calculations are going on...'):
     widget = iface.messageBar().createMessage(title, message)
     iface.messageBar().pushWidget(widget, iface.messageBar().WARNING)
+    OeQ_unlockQgis()
     return widget
-    #OeQ_unlockQgis()
     #print "THIS PRINTLN IS NECESSARY TO TRIGGER THE MESSAGEBAR"
 
 
@@ -138,8 +196,8 @@ def OeQ_pop_warning(baritem=None):
 def OeQ_push_error(title='Be patient!', message='Background calculations are going on...'):
     widget = iface.messageBar().createMessage(title, message)
     iface.messageBar().pushWidget(widget, iface.messageBar().CRITICAL)
+    OeQ_unlockQgis()
     return widget
-    #OeQ_unlockQgis()
     #print "THIS PRINTLN IS NECESSARY TO TRIGGER THE MESSAGEBAR"
 
 
@@ -170,6 +228,10 @@ QeQ_current_work_layer = None
 def OeQ_unlockQgis():
     import sys
     sys.stdout.write('')
+    sys.stdout.write('')
+    sys.stdout.write('')
+    sys.stdout.write('')
+
 
 from PyQt4.QtCore import QSettings
 
@@ -200,28 +262,39 @@ from PyQt4.QtWebKit import *
 def OeQ_wait_for_renderer(timeout=10000):
     """Block loop until signal emitted, or timeout (ms) elapses."""
     from PyQt4.QtCore import QEventLoop,QTimer
-    loop = QEventLoop()
-    timer=QTimer()
-    render_result = [True]
-
-    iface.mapCanvas().mapCanvasRefreshed.connect(loop.quit)
-
+    #print 'wait for renderer...',
+    # function call if action timed out
     def timed_out(render_result_flag):
         render_result_flag[0]=False
         loop.quit()
+    #define loop
+    loop = QEventLoop()
+    #define Timer
+    timer=QTimer()
+    #define render_result
+    render_result = [True]
 
-    if timeout is not None:
-        timer.singleShot(timeout,lambda: timed_out(render_result))
-    loop.exec_()
+    OeQ_wait(2)
 
-    iface.mapCanvas().mapCanvasRefreshed.disconnect(loop.quit)
-
-
-    #if render_result[0]:
-    #    print "Rendered"
-    #else:
-    #    print "Rendering timed out"
+    #check wether Canvas is drawing
+    if iface.mapCanvas().isDrawing():
+        #connect mapCanvasRefreshed and renderComplete events to quit loop
+        iface.mapCanvas().renderComplete.connect(loop.quit)
+        iface.mapCanvas().mapCanvasRefreshed.connect(loop.quit)
+        # if a timeout is defined and other than 0
+        if bool(timeout):
+            # start timer
+            timer.singleShot(timeout,lambda: timed_out(render_result))
+        #and jump into the loop
+        loop.exec_()
+        #disconnect after loop has quit
+        iface.mapCanvas().mapCanvasRefreshed.disconnect(loop.quit)
+        iface.mapCanvas().renderComplete.disconnect(loop.quit)
+    #print 'Done'
     return render_result[0]
+
+def OeQ_wait_until_layer_exists():
+    pass
 
 def OeQ_wait_for_file(filepath,timeout=10000):
     """Block loop until signal emitted, or timeout (ms) elapses."""
@@ -260,6 +333,7 @@ def OeQ_wait_for_file(filepath,timeout=10000):
 
 def OeQ_wait(sec):
     from PyQt4.QtCore import QEventLoop,QTimer
+    #print 'wait ' + str(sec) + ' sec',
     loop = QEventLoop()
     QTimer.singleShot(sec*1000,loop.quit)
     loop.exec_()
